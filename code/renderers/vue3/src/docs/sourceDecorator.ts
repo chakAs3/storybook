@@ -45,12 +45,12 @@ function getComponentName(component: any): string | null {
  */
 function argsToSource(args: any, argTypes: ArgTypes, slotProps?: string[] | null): string {
   const argsKeys = Object.keys(args);
-  const srouce = argsKeys
+  const source = argsKeys
     .map((key) => propToDynamicSource(key, args[key], argTypes, slotProps))
     .filter((item) => item !== '')
     .join(' ');
 
-  return srouce;
+  return source;
 }
 
 function propToDynamicSource(
@@ -65,7 +65,7 @@ function propToDynamicSource(
     (argTypes[key] && argTypes[key].defaultValue === val)
   )
     return '';
-  return `:${key}="${key}"`;
+  return `${key === val ? ':' : ''}${key}=${JSON.stringify(val)}`;
 }
 
 function generateSetupScript(args: any, argTypes: ArgTypes): string {
@@ -75,24 +75,10 @@ function generateSetupScript(args: any, argTypes: ArgTypes): string {
   for (const key of argsKeys) {
     if (!(argTypes[key] && argTypes[key].defaultValue === args[key]))
       if (typeof args[key] !== 'function')
-        scriptBody += `\n const ${key} = ref(${propValueToSource(args[key])})`;
-      else scriptBody += `\n const ${key} = ()=>{}`;
+        scriptBody += `\n const ${key} = ref(${JSON.stringify(args[key])})`;
+      else scriptBody += `\n const ${key} = ()=>{${args[key].toString()}}`;
   }
   return `<script lang="ts" setup>${scriptBody}\n</script>`;
-}
-
-function propValueToSource(val: string | boolean | object | undefined) {
-  const type = typeof val;
-  switch (type) {
-    case 'boolean':
-      return val;
-    case 'object':
-      return `${JSON.stringify(val as object)}`;
-    case 'undefined':
-      return `${val}`;
-    default:
-      return `"${val}"`;
-  }
 }
 
 function getTemplates(renderFunc: any): [] {
@@ -249,15 +235,26 @@ export const sourceDecorator = (storyFn: any, context: StoryContext<Renderer>) =
     return story;
   }
 
-  const { args = {}, component: ctxtComponent, originalStoryFn: render } = context || {};
+  const {
+    parameters = {},
+    args = {},
+    component: ctxtComponent,
+    originalStoryFn: render,
+  } = context || {};
   const components = getTemplates(render);
-
+  console.log('params :', parameters, args, ctxtComponent, render, components);
   const renderedComponent = components.length ? components : ctxtComponent;
 
   const slotProps: string[] = getComponentSlots(ctxtComponent);
 
-  const generatedTemplate = generateSource(renderedComponent, args, context?.argTypes, slotProps);
-  const generatedScript = generateSetupScript(args, context?.argTypes);
+  const withScriptSetup = parameters?.docs?.source?.scriptSetup;
+  const generatedScript = withScriptSetup ? generateSetupScript(args, context?.argTypes) : '';
+  const generatedTemplate = generateSource(
+    renderedComponent,
+    withScriptSetup ? args.map((key: any) => key) : args,
+    context?.argTypes,
+    slotProps
+  );
 
   if (generatedTemplate) {
     source = prettierFormat(`${generatedScript}\n <template>\n ${generatedTemplate} \n</template>`);
